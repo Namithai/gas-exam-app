@@ -1,0 +1,12 @@
+question_id,choice_no,choice_text,explanation_text,explanation_url,is_correct
+SAMPLE-001,1,サンプル選択肢1（正解）,これは動作確認用のサンプル解説です。,https://jp.kintone.help/k/ja/,TRUE
+SAMPLE-001,2,サンプル選択肢2,これは動作確認用のサンプル解説です。,https://jp.kintone.help/k/ja/,FALSE
+SAMPLE-001,3,サンプル選択肢3,これは動作確認用のサンプル解説です。,https://jp.kintone.help/k/ja/,FALSE
+SAMPLE-001,4,サンプル選択肢4,これは動作確認用のサンプル解説です。,https://jp.kintone.help/k/ja/,FALSE
+SAMPLE-002,1,サンプル選択肢1（正解）,これは動作確認用のサンプル解説です。,https://jp.kintone.help/k/ja/,TRUE
+SAMPLE-002,2,サンプル選択肢2（正解）,これは動作確認用のサンプル解説です。,https://jp.kintone.help/k/ja/,TRUE
+SAMPLE-002,3,サンプル選択肢3,これは動作確認用のサンプル解説です。,https://jp.kintone.help/k/ja/,FALSE
+SAMPLE-002,4,サンプル選択肢4,これは動作確認用のサンプル解説です。,https://jp.kintone.help/k/ja/,FALSE
+SAMPLE-003,1,サンプル選択肢1（正解）,これは動作確認用のサンプル解説です。,https://jp.kintone.help/k/ja/,TRUE
+SAMPLE-003,2,サンプル選択肢2,これは動作確認用のサンプル解説です。,https://jp.kintone.help/k/ja/,FALSE
+SAMPLE-003,3,サンプル選択肢3,これは動作確認用のサンプル解説です。,https://jp.kintone.help/k/ja/,FALSE
