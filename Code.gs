@@ -269,6 +269,7 @@ function doGet(e) {
                 <div class="menu-item" onclick="goToTermMenu()"><h3>📚 用語学習</h3><p>用語を覚える・用語クイズ</p></div>
                 <div class="menu-item" onclick="showImport()"><h3>📥 問題インポート</h3><p>CSVで問題を追加・更新</p></div>
             </div>
+      <p id="dataVersionNote" class="dash-note" style="margin-top:16px;"></p>
         </div>
 
         <!-- カテゴリー選択 -->
@@ -352,6 +353,11 @@ function doGet(e) {
                 <h3 class="dash-section__title">出題タイプ別の正答率</h3>
                 <div id="dashType" class="dash-list"></div>
             </div>
+
+      <div class="dash-section">
+        <h3 class="dash-section__title">用語学習</h3>
+        <div id="dashTerm" class="dash-list"></div>
+      </div>
 
             <p class="dash-note">正答率が70%未満の項目には <span class="warn-badge">!</span> が付きます</p>
             <button onclick="goToMenu()">← メインメニューに戻る</button>
@@ -596,10 +602,12 @@ function doGet(e) {
 
         /* ===== 画面切り替え ===== */
         function showScreen(screenId) {
+      if (screenId === "menuScreen") { setTimeout(loadDataVersion, 0); }
             document.querySelectorAll('.screen').forEach(function (s) { s.classList.remove('active'); });
             document.getElementById(screenId).classList.add('active');
         }
         function goToMenu() {
+      loadDataVersion();
             showScreen('menuScreen');
             window.scrollTo(0, 0);
         }
@@ -607,7 +615,40 @@ function doGet(e) {
             showScreen('dashboardScreen');
             loadDashboard();
         }
-        function loadDashboard() {
+        // メニュー下部に知識問題データのバージョンを表示
+    function loadDataVersion() {
+      var el = document.getElementById("dataVersionNote");
+      if (!el) return;
+      gasRun("getDataVersion", []).then(function (v) {
+        if (!v) { el.textContent = ""; return; }
+        var parts = [];
+        parts.push("知識問題データ　バージョン " + v.version);
+        if (v.target_exam) parts.push("対応試験：" + v.target_exam);
+        if (v.imported_count) parts.push(v.imported_count + "問");
+        if (v.imported_at) parts.push(v.imported_at + " 取込");
+        el.textContent = parts.join("　/　");
+      });
+    }
+
+    // ダッシュボードに用語学習のサマリーを描画
+    function loadDashboardTerm() {
+      var el = document.getElementById("dashTerm");
+      if (!el) return;
+      el.innerHTML = '<div class="loading"></div>';
+      gasRun("getTermDashboard", [currentStudent, "", ""]).then(function (t) {
+        if (!t) { renderRateList("dashTerm", [], "用語データがありません"); return; }
+        var qt = 0, qd = 0;
+        (t.quiz_by_chapter || []).forEach(function (r) { qt += (r.total || 0); qd += (r.done || 0); });
+        var rows = [
+          { key: "覚えた用語", total: t.total || 0, done: t.learned || 0 },
+          { key: "用語クイズの正答率", total: qt, done: qd }
+        ];
+        renderRateList("dashTerm", rows, "用語データがありません");
+      });
+    }
+
+    function loadDashboard() {
+      loadDashboardTerm();
             document.getElementById('dashCategory').innerHTML = '<div class="loading"></div>';
             document.getElementById('dashType').innerHTML = '';
             gasRun('getDashboardStats', [currentStudent]).then(function (st) {
@@ -2126,6 +2167,27 @@ function deleteRowsByKey_(sheet, keyColIndex, keys) {
     var key = String(vals[i][keyColIndex]).trim();
     if (keySet[key]) sheet.deleteRow(i + 2);
   }
+}
+
+// 知識問題データの最新バージョンを返す（メニュー下部の表示用）
+function getDataVersion() {
+  return getDataVersion_();
+}
+
+function getDataVersion_() {
+  var sheet = SS.getSheetByName(SHEET_DATA_VERSION);
+  if (!sheet) return null;
+  var last = sheet.getLastRow();
+  if (last < 2) return null;
+  var row = sheet.getRange(last, 1, 1, 4).getValues()[0];
+  var at = row[2];
+  var atText = "";
+  if (at instanceof Date) {
+    atText = Utilities.formatDate(at, "JST", "yyyy/MM/dd");
+  } else if (at) {
+    atText = String(at);
+  }
+  return { version: row[0], target_exam: row[1], imported_at: atText, imported_count: row[3] };
 }
 
 function bumpDataVersion_(count) {
