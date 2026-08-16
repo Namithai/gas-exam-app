@@ -1013,7 +1013,8 @@ function doGet(e) {
             const avgSeconds = total > 0 ? Math.round((durationSeconds / total) * 10) / 10 : 0;
 
             let html = '';
-            html += '<div class="result-summary">';
+            html += '<button type="button" class="result-back-btn" onclick="goToMenu()" style="margin-top:0; margin-bottom:16px;">← メインメニューに戻る</button>';
+      html += '<div class="result-summary">';
             html += '  <p class="result-summary__label">結果（' + escapeHtml(quizLabel) + '）</p>';
             html += '  <p class="result-summary__score">' + correctCount + ' <span>/ ' + total + '問</span></p>';
             html += '  <p class="result-summary__rate">正答率 ' + rate + '%</p>';
@@ -1068,7 +1069,7 @@ function doGet(e) {
             });
             html += '</div>';
 
-            html += '<button type="button" class="result-back-btn" onclick="goToMenu()">メインメニューに戻る</button>';
+            html += '<button type="button" class="result-back-btn" onclick="goToMenu()">← メインメニューに戻る</button>';
 
             document.getElementById('resultContent').innerHTML = html;
             showScreen('resultScreen');
