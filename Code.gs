@@ -10,19 +10,17 @@
  *  3. 表示された /exec のURLを開けば動作する（別のHTMLファイルは不要）
  *
  * ---- この版について ----
- * 2026/08/17 通常版（本番モード 50問・60分）
- * 変更1: 選択肢の取得を getChoicesBatch で1回にまとめ、出題準備を高速化
- * 変更2: 用語学習メニューに受験者名の表示と「別の学生に変更」を追加
- * 変更3: 用語学習から受験者を変更した場合、選択後は用語学習メニューへ戻るようにした
- * 変更4: 用語クイズの出題画面に用語ID（TERM-xxx）を表示（模擬試験の出題画面と同じ形）
- * 変更7: インポートのエラー表示を整理。IDを並べる代わりに
- *        「CSVの内容がそろっていません。ダウンロードし直して…」と、やることを1行で伝える形にした
- * 変更6: CSVの「対応試験」列を読み取り、プレビュー・取り込み完了の画面に表示。
- *        data_versionシートにも 'kintone' 固定ではなくCSVの値を記録するようにした
- * 変更5: 問題インポート画面を「CSVファイルを選ぶ」だけに整理（貼り付け欄と形式説明は廃止。形式は保守マニュアル側に記載）。
- *        読み込んだファイル名を画面に表示するようにした
+ * 2026/08/18 通常版（本番モード 50問・60分）
+ * 2026/08/17版（変更1〜7）に、問題インポートのバージョンチェックを追加したもの。
+ * 変更8: CSVの「対応試験」と、現在の問題データ（data_versionシート）の「対応試験」に
+ *        含まれる日付を比べ、同じ日付／古い日付のときだけ、プレビュー画面に
+ *        赤枠のコーションを表示する。確認ダイアログは使わない（GASは処理の途中で
+ *        確認を出せず、CSVの読み直しになるため）。
+ *        ・新しい日付、初回の取り込み（data_versionに記録なし）は何も表示しない
+ *        ・［取り込む］を押した時点で了承とみなす。取り込み処理そのものは変更なし
+ *        ・CSVの「生成日時」列は練習問題の作成日時なので判定には使わない
  * 注: CSVのドラッグ＆ドロップはGASのサンドボックスiframe内では動作しないため見送り
- *     （インポートは「ファイル選択」ボタン、またはCSVの貼り付けで行う）
+ *     （インポートは「ファイル選択」ボタンで行う）
  */
 
 // ===== グローバル設定 =====
@@ -130,6 +128,8 @@ function doGet(e) {
         .import-result__ok { background:#eaf7ee; border-left:4px solid #28a745; color:#1e7e34; }
         .import-result__warn { background:#fff3cd; border-left:4px solid #ffc107; color:#856404; }
         .import-result__err { background:#fdecea; border-left:4px solid #dc3545; color:#c0392b; }
+        .import-caution { border:3px solid #eb4d4b; background:#fff6f5; color:#8a2b2a; border-radius:8px; padding:16px 18px; font-size:15px; font-weight:bold; line-height:1.9; margin-bottom:14px; }
+        .import-caution__head { font-size:16px; margin-bottom:6px; }
         .import-file { display:block; width:100%; padding:14px; border:2px dashed #667eea; border-radius:8px; background:#f8f9ff; font-size:14px; cursor:pointer; }
         .import-file-info { margin-top:8px; font-size:13px; color:#28a745; font-weight:bold; min-height:18px; }
         button { padding: 12px 24px; background: #667eea; color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: bold; cursor: pointer; transition: background 0.3s; }
@@ -1441,12 +1441,20 @@ function doGet(e) {
                 res.errors.forEach(function (e) { errsHtml += '<li>' + escapeHtml(e) + '</li>'; });
                 errsHtml += '</ul></div>';
             }
+            // バージョンチェックの結果（同じ日付／古い日付のときだけサーバー側から届く）
+            var cautionHtml = '';
+            if (isPreview && res.caution && res.caution.lines && res.caution.lines.length) {
+                var cl = res.caution.lines;
+                cautionHtml = '<div class="import-caution"><p class="import-caution__head">⚠ ' + escapeHtml(cl[0]) + '</p>';
+                for (var ci = 1; ci < cl.length; ci++) { cautionHtml += escapeHtml(cl[ci]) + '<br>'; }
+                cautionHtml += '</div>';
+            }
             var cls = (res.errors && res.errors.length) ? 'import-result__warn' : 'import-result__ok';
             var head = isPreview ? 'プレビュー結果（まだ保存していません）' : '取り込み完了！';
             var body = '問題 ' + res.questionCount + ' 問 ／ 選択肢 ' + res.choiceCount + ' 件';
             if (res.target_exam) { body += '<br>対応試験：' + escapeHtml(res.target_exam); }
             if (!isPreview && res.version) { body += '<br>データ版：v' + res.version + '（' + escapeHtml(res.mode === 'replace' ? '全置換' : '追記') + '）'; }
-            box.innerHTML = '<div class="import-result__box ' + cls + '"><b>' + head + '</b><br>' + body + errsHtml + '</div>';
+            box.innerHTML = cautionHtml + '<div class="import-result__box ' + cls + '"><b>' + head + '</b><br>' + body + errsHtml + '</div>';
         }
         function previewImport() {
             var arr = getImportPayload();
@@ -2251,6 +2259,54 @@ function getDataVersion_() {
   return { version: row[0], target_exam: row[1], imported_at: atText, imported_count: row[3] };
 }
 
+// =========================================================
+// 問題インポートのバージョンチェック
+//   CSVの「対応試験」（例:「2026年4月30日改定」）と、現在の問題データ
+//   （data_versionシートの最終行の対応試験）の日付を比べる。
+//   version列は自社側の連番でサイボウズ側の改訂とは無関係なため使わない。
+// =========================================================
+
+// 「2026年4月30日改定」等から日付を取り出し 20260430 の数値にして返す。
+// 日付が見当たらないときは null（＝比較しない）。
+function examDateNum_(v) {
+  var s = normKey_(v);
+  if (!s) return null;
+  var m = s.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+  if (!m) m = s.match(/(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
+  if (!m) return null;
+  return Number(m[1]) * 10000 + Number(m[2]) * 100 + Number(m[3]);
+}
+
+// プレビュー画面に出すコーション文を作る。出さない場合は null を返す。
+//   出さない: CSVの方が新しい / 初回の取り込み / どちらかの日付が読み取れない
+//   出す    : 同じ日付・古い日付
+function buildImportCaution_(csvTargetExam) {
+  var csvNum = examDateNum_(csvTargetExam);
+  if (!csvNum) return null;
+
+  var cur = getDataVersion_();
+  if (!cur) return null;                       // data_version に記録なし（初回）
+  var curNum = examDateNum_(cur.target_exam);
+  if (!curNum) return null;
+
+  if (csvNum > curNum) return null;            // CSVの方が新しい＝通常の更新
+
+  var head = (csvNum === curNum)
+    ? '現在の問題データと同じバージョンの問題です。'
+    : '現在の問題データより古いバージョンの問題です。';
+
+  return {
+    level: (csvNum === curNum) ? 'same' : 'old',
+    csv_target_exam: String(csvTargetExam || ''),
+    current_target_exam: String(cur.target_exam || ''),
+    lines: [
+      head,
+      '更新する場合は［取り込む］ボタンをクリックしてください。',
+      '中止する場合は、このまま何もせずに終了してください。'
+    ]
+  };
+}
+
 function bumpDataVersion_(count, targetExam) {
   var sheet = SS.getSheetByName(SHEET_DATA_VERSION);
   if (!sheet) {
@@ -2441,7 +2497,8 @@ function writeImport_(qMap, qOrder, cByQ, mode, dryRun, errors, targetExam, coun
   qOrder.forEach(function (id) { choiceCount += (cByQ[id] || []).length; });
 
   if (dryRun) {
-    return { ok: true, questionCount: questionCount, choiceCount: choiceCount, errors: errors, mode: mode, target_exam: targetExam };
+    // プレビューの中でバージョン（対応試験の日付）も見る
+    return { ok: true, questionCount: questionCount, choiceCount: choiceCount, errors: errors, mode: mode, target_exam: targetExam, caution: buildImportCaution_(targetExam) };
   }
 
   var qSheet = SS.getSheetByName(SHEET_QUESTIONS);
