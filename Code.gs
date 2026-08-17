@@ -8,6 +8,12 @@
  *  1. コード.gsの中身を全部消し、このコードを貼り付けて保存
  *  2. [デプロイ]→[デプロイを管理]→鉛筆→バージョン「新バージョン」→[デプロイ]
  *  3. 表示された /exec のURLを開けば動作する（別のHTMLファイルは不要）
+ *
+ * ---- この版について ----
+ * 2026/08/17 通常版（本番モード 50問・60分）
+ * 変更1: 選択肢の取得を getChoicesBatch で1回にまとめ、出題準備を高速化
+ * 変更2: 用語学習メニューに受験者名の表示と「別の学生に変更」を追加
+ * 変更3: 用語学習から受験者を変更した場合、選択後は用語学習メニューへ戻るようにした
  */
 
 // ===== グローバル設定 =====
@@ -365,6 +371,11 @@ function doGet(e) {
 
         <!-- 用語学習メニュー -->
         <div id="termMenuScreen" class="screen">
+            <!-- 受験者の表示と切り替え（誤操作を防ぐため、学習中の画面には置かない） -->
+            <div class="student-info">
+                <p class="student-name" id="currentStudentNameTerm"></p>
+                <p style="font-size: 12px; margin-top: 5px;"><a href="javascript:changeStudent()" style="color: #667eea; text-decoration: none;">別の学生に変更</a></p>
+            </div>
             <h2 style="color: #667eea; margin-bottom: 16px; text-align: center;">📚 用語学習</h2>
 
             <div class="term-filter">
@@ -475,6 +486,8 @@ function doGet(e) {
         const QUIZ_COUNT = 10; // カテゴリー別の出題数
 
         let currentStudent = null;
+        // 受験者を選び直したあと、どの画面へ戻るか（用語学習から変更した場合は用語メニューへ戻す）
+        let studentReturnScreen = 'menuScreen';
 
         // 出題用の状態（キントーン版 state に相当）
         let quizQuestions = [];
@@ -587,10 +600,21 @@ function doGet(e) {
         function selectStudent(name) {
             currentStudent = name;
             localStorage.setItem(STORAGE_KEY_STUDENT, name);
-            showScreen('menuScreen');
-            updateStudentInfo();
+            const back = studentReturnScreen;
+            studentReturnScreen = 'menuScreen';
+            if (back === 'termMenuScreen') {
+                showScreen('termMenuScreen');
+                updateStudentInfo();
+                loadTermDashboard();
+            } else {
+                showScreen('menuScreen');
+                updateStudentInfo();
+            }
         }
         function changeStudent() {
+            // 変更を始めた画面を覚えておき、選択後にそこへ戻す
+            const active = document.querySelector('.screen.active');
+            studentReturnScreen = (active && active.id === 'termMenuScreen') ? 'termMenuScreen' : 'menuScreen';
             localStorage.removeItem(STORAGE_KEY_STUDENT);
             currentStudent = null;
             showScreen('nameSelectScreen');
@@ -598,6 +622,8 @@ function doGet(e) {
         }
         function updateStudentInfo() {
             document.getElementById('currentStudentName').textContent = currentStudent;
+            var termNameEl = document.getElementById('currentStudentNameTerm');
+            if (termNameEl) termNameEl.textContent = currentStudent;
         }
 
         /* ===== 画面切り替え ===== */
@@ -800,14 +826,16 @@ function doGet(e) {
                 }
                 shuffleArr(qs);
                 qs = qs.slice(0, quizCount);
-                return Promise.all(qs.map(function (q) {
-                    return gasRun('getChoices', [q.question_id]).then(function (choices) {
-                        choices = choices || [];
+                const qids = qs.map(function (q) { return q.question_id; });
+                return gasRun('getChoicesBatch', [qids]).then(function (map) {
+                    map = map || {};
+                    qs.forEach(function (q) {
+                        const choices = map[String(q.question_id)] || [];
                         shuffleArr(choices);
                         q.choices = choices;
-                        return q;
                     });
-                }));
+                    return qs;
+                });
             }).then(function (list) {
                 if (!list) return;
                 quizQuestions = list;
@@ -1080,6 +1108,7 @@ function doGet(e) {
         function goToTermMenu() {
             showScreen('termMenuScreen');
             window.scrollTo(0, 0);
+            updateStudentInfo();
             loadTermDashboard();
         }
 
@@ -1677,6 +1706,46 @@ function getChoices_(questionId) {
 
   result.sort(function(a, b) { return a.choice_no - b.choice_no; });
   return result;
+}
+
+/**
+ * 選択肢の一括取得（高速化）
+ * 問題IDの配列を受け取り、choicesシートを1回だけ読んで
+ * { 問題ID: [選択肢, ...] } の形で返す。
+ * 従来は問題1件ごとに getChoices を呼んでいたため、
+ * 出題数ぶんの通信とシート全読みが発生して遅かった。
+ */
+function getChoicesBatch(questionIds) {
+  return getChoicesBatch_(questionIds);
+}
+function getChoicesBatch_(questionIds) {
+  var sheet = SS.getSheetByName(SHEET_CHOICES);
+  var data = sheet.getDataRange().getValues();
+
+  var want = {};
+  (questionIds || []).forEach(function (id) { want[qidKey_(id)] = true; });
+
+  var map = {};
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var key = qidKey_(row[0]);
+    if (!want[key]) continue;
+    if (!map[key]) map[key] = [];
+    map[key].push({
+      question_id: key,
+      choice_no: row[1],
+      choice_text: row[2],
+      explanation_text: row[3],
+      explanation_url: row[4],
+      is_correct: row[5]
+    });
+  }
+
+  Object.keys(map).forEach(function (k) {
+    map[k].sort(function (a, b) { return a.choice_no - b.choice_no; });
+  });
+
+  return map;
 }
 
 // ===== 受験履歴 =====
