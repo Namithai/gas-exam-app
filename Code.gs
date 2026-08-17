@@ -14,6 +14,15 @@
  * 変更1: 選択肢の取得を getChoicesBatch で1回にまとめ、出題準備を高速化
  * 変更2: 用語学習メニューに受験者名の表示と「別の学生に変更」を追加
  * 変更3: 用語学習から受験者を変更した場合、選択後は用語学習メニューへ戻るようにした
+ * 変更4: 用語クイズの出題画面に用語ID（TERM-xxx）を表示（模擬試験の出題画面と同じ形）
+ * 変更7: インポートのエラー表示を整理。IDを並べる代わりに
+ *        「CSVの内容がそろっていません。ダウンロードし直して…」と、やることを1行で伝える形にした
+ * 変更6: CSVの「対応試験」列を読み取り、プレビュー・取り込み完了の画面に表示。
+ *        data_versionシートにも 'kintone' 固定ではなくCSVの値を記録するようにした
+ * 変更5: 問題インポート画面を「CSVファイルを選ぶ」だけに整理（貼り付け欄と形式説明は廃止。形式は保守マニュアル側に記載）。
+ *        読み込んだファイル名を画面に表示するようにした
+ * 注: CSVのドラッグ＆ドロップはGASのサンドボックスiframe内では動作しないため見送り
+ *     （インポートは「ファイル選択」ボタン、またはCSVの貼り付けで行う）
  */
 
 // ===== グローバル設定 =====
@@ -448,23 +457,9 @@ function doGet(e) {
             <h2 style="color: #667eea; margin-bottom: 8px; text-align: center;">📥 問題インポート</h2>
             <p style="text-align:center; color:#888; font-size:13px; margin-bottom:16px;">CSVファイルを選ぶだけ。形式は自動で判別します（複数ファイルまとめてOK）</p>
 
-            <div class="import-help">
-                <details>
-                    <summary>対応している形式（クリックで開く）</summary>
-                    <div class="import-help-body">
-                        <p>下の「ファイルを選ぶ」で、以下のどのCSVでも取り込めます。中身の見出しから自動で振り分けます。</p>
-                        <p style="margin-top:8px;">・<b>問題データ</b>（question_id,question_category,question_type,select_type,question）＋<b>選択肢データ</b>（question_id,choice_no,choice_text,…）の2ファイル<br>・kintoneの<b>練習問題セット</b>（練習問題セット,設問,…,選択肢A〜D,…）</p>
-                        <p style="margin-top:8px; color:#888;">・複数ファイルを同時に選べます<br>・追記モードでは、同じ問題IDがあれば最新に上書きします</p>
-                    </div>
-                </details>
-            </div>
-
-            <label class="import-label">方法1：ファイルを選ぶ（おすすめ・入力もコピペも不要）</label>
+            <label class="import-label">CSVファイルを選ぶ（選ぶとファイル名が下に出ます）</label>
             <input type="file" id="importFile" class="import-file" accept=".csv,text/csv" multiple onchange="loadImportFiles(this)">
             <div id="importFileInfo" class="import-file-info"></div>
-
-            <label class="import-label">方法2：直接コピペ（上でファイルを選ぶと自動で入ります）</label>
-            <textarea id="importKintoneCsv" class="import-textarea" style="min-height:140px;" placeholder="ここに kintone のCSVを貼り付け（またはファイルを選ぶと自動で入ります）"></textarea>
 
             <div class="import-mode">
                 <label><input type="radio" name="importMode" value="append" checked> 追記（同じIDは上書き・他はそのまま）※おすすめ</label>
@@ -1294,6 +1289,7 @@ function doGet(e) {
             html += '<div class="quiz-progress-bar"><div class="quiz-progress-bar__fill" style="width:' + Math.round((termQuizIndex / termQuizList.length) * 100) + '%"></div></div>';
             html += '<p class="quiz-progress-label">第' + (termQuizIndex + 1) + '問 / 全' + termQuizList.length + '問</p>';
             html += '<div class="quiz-meta">';
+            html += '  <span class="quiz-meta__item">ID: ' + escapeHtml(t.term_id || '') + '</span>';
             html += '  <span class="quiz-meta__item">' + escapeHtml(String(t.chapter || '')) + '</span>';
             html += '  <span class="quiz-meta__item quiz-meta__item--select-type">' + escapeHtml(t.level || '') + '</span>';
             html += '</div>';
@@ -1388,9 +1384,7 @@ function doGet(e) {
             window.scrollTo(0, 0);
         }
         function getImportPayload() {
-            if (importFileTexts && importFileTexts.length) return importFileTexts;
-            var t = document.getElementById('importKintoneCsv').value;
-            return (t && t.trim()) ? [t] : [];
+            return (importFileTexts && importFileTexts.length) ? importFileTexts : [];
         }
         function getImportMode() {
             var els = document.querySelectorAll('input[name="importMode"]');
@@ -1425,18 +1419,14 @@ function doGet(e) {
             }
             function done() {
                 importFileTexts = texts.filter(function (t) { return t && t.trim(); });
+                var names = [];
+                for (var k = 0; k < files.length; k++) { names.push(files[k].name); }
                 info.style.color = failed ? '#c0392b' : '#28a745';
-                info.textContent = importFileTexts.length + '個のファイルを読み込みました。'
-                    + (failed ? '（' + failed + '個は失敗）' : '')
-                    + ' 次に「チェック」を押してください。';
+                info.textContent = '読み込んだファイル：' + names.join('、')
+                    + '（' + importFileTexts.length + '個）'
+                    + (failed ? ' ※' + failed + '個は失敗' : '')
+                    + '／次に「チェック（プレビュー）」を押してください。';
             }
-        }
-        function fillImportSample() {
-            var NL = String.fromCharCode(10);
-            document.getElementById('importKintoneCsv').value = [
-                '練習問題セット,設問,生成日時,カテゴリ,正誤,正答,あなたの回答,出題内容,選択肢A,選択肢B,選択肢C,選択肢D,選択肢A ヘルプ参照先,選択肢A ヘルプ参照先URL,選択肢B ヘルプ参照先,選択肢B ヘルプ参照先URL,選択肢C ヘルプ参照先,選択肢C ヘルプ参照先URL,選択肢D ヘルプ参照先,選択肢D ヘルプ参照先URL,選択肢A テキスト参照先,選択肢B テキスト参照先,選択肢C テキスト参照先,選択肢D テキスト参照先,対応試験',
-                '1,1,2026/08/14 14:42,アプリ,誤,AB,D,kintoneのアプリでレコードを一意に識別する番号は？（正しいものをすべて選べ）,レコード番号,自動採番される,フィールドコード,アプリID,ヘルプA,https://jp.kintone.help/,ヘルプB,https://jp.kintone.help/,ヘルプC,https://jp.kintone.help/,ヘルプD,https://jp.kintone.help/,1-2 レコード,1-2 レコード,2-4 フィールド,1-1 アプリ,2026年4月30日改定'
-            ].join(NL);
         }
         function renderImportResult(res, isPreview) {
             var box = document.getElementById('importResult');
@@ -1454,6 +1444,7 @@ function doGet(e) {
             var cls = (res.errors && res.errors.length) ? 'import-result__warn' : 'import-result__ok';
             var head = isPreview ? 'プレビュー結果（まだ保存していません）' : '取り込み完了！';
             var body = '問題 ' + res.questionCount + ' 問 ／ 選択肢 ' + res.choiceCount + ' 件';
+            if (res.target_exam) { body += '<br>対応試験：' + escapeHtml(res.target_exam); }
             if (!isPreview && res.version) { body += '<br>データ版：v' + res.version + '（' + escapeHtml(res.mode === 'replace' ? '全置換' : '追記') + '）'; }
             box.innerHTML = '<div class="import-result__box ' + cls + '"><b>' + head + '</b><br>' + body + errsHtml + '</div>';
         }
@@ -2260,7 +2251,7 @@ function getDataVersion_() {
   return { version: row[0], target_exam: row[1], imported_at: atText, imported_count: row[3] };
 }
 
-function bumpDataVersion_(count) {
+function bumpDataVersion_(count, targetExam) {
   var sheet = SS.getSheetByName(SHEET_DATA_VERSION);
   if (!sheet) {
     sheet = SS.insertSheet(SHEET_DATA_VERSION);
@@ -2272,7 +2263,7 @@ function bumpDataVersion_(count) {
     var prev = sheet.getRange(last, 1).getValue();
     version = (Number(prev) || 0) + 1;
   }
-  sheet.appendRow([version, 'kintone', new Date(), count]);
+  sheet.appendRow([version, (targetExam || 'kintone'), new Date(), count]);
   return version;
 }
 
@@ -2353,6 +2344,7 @@ function importAuto_(texts, mode, dryRun) {
     var errors = [];
     var qMap = {}, order = [], cByQ = {};
     var LETTERS = ['A', 'B', 'C', 'D'];
+    var targetExam = '';   // 練習問題CSVの「対応試験」列（最初に見つかった値を使う）
 
     texts.forEach(function (text, fi) {
       if (!text || !String(text).trim()) return;
@@ -2377,6 +2369,10 @@ function importAuto_(texts, mode, dryRun) {
         if (kind === 'practice') {
           if (first === '練習問題セット') continue;
           if (row.length < 12) continue;
+          if (!targetExam) {
+            var teIdx = header.indexOf('対応試験');
+            if (teIdx >= 0 && row[teIdx] != null && String(row[teIdx]).trim() !== '') targetExam = String(row[teIdx]).trim();
+          }
           var qid = first + '-' + String(row[1] == null ? '' : row[1]).trim();
           var correct = String(row[5] == null ? '' : row[5]).trim().toUpperCase();
           if (!qMap[qid]) order.push(qid);
@@ -2407,31 +2403,45 @@ function importAuto_(texts, mode, dryRun) {
     var seen = {}, qOrder = [];
     order.forEach(function (id) { if (!seen[id]) { seen[id] = 1; qOrder.push(id); } });
 
+    // 選択肢が1件も無い問題は、まとめて分かりやすい1行にする
+    var noChoice = [], noCorrect = [];
     qOrder.forEach(function (id) {
       var cs = cByQ[id] || [];
-      if (cs.length === 0) errors.push('問題 ' + id + ' に選択肢がありません');
-      else if (!cs.some(function (c) { return c[5] === '○'; })) errors.push('問題 ' + id + ' に正解(○)がありません');
+      if (cs.length === 0) noChoice.push(id);
+      else if (!cs.some(function (c) { return c[5] === '○'; })) noCorrect.push(id);
     });
+    var counts = { noChoice: noChoice.length, noCorrect: noCorrect.length };
 
-    return writeImport_(qMap, qOrder, cByQ, mode, dryRun, errors);
+    return writeImport_(qMap, qOrder, cByQ, mode, dryRun, errors, targetExam, counts);
   } catch (err) {
     return { ok: false, message: (err && err.message) ? err.message : String(err) };
   }
 }
 
 // qMap/qOrder/cByQ を questions/choices シートへ書き込む共通処理
-function writeImport_(qMap, qOrder, cByQ, mode, dryRun, errors) {
+function writeImport_(qMap, qOrder, cByQ, mode, dryRun, errors, targetExam, counts) {
   errors = errors || [];
-  Object.keys(cByQ).forEach(function (id) {
-    if (!qMap[id]) errors.push('選択肢のID ' + id + ' に対応する問題がありません');
-  });
+  targetExam = targetExam || '';
+  counts = counts || {};
+
+  // 問題と選択肢の食い違いは、管理者にできることが「取り直して選び直す」だけなので
+  // IDを並べず、やることを1行で伝えて状況だけ括弧で添える
+  var orphan = 0;
+  Object.keys(cByQ).forEach(function (id) { if (!qMap[id]) orphan++; });
+  var detail = [];
+  if (orphan) detail.push('対応する問題が無い選択肢 ' + orphan + ' 件分');
+  if (counts.noChoice) detail.push('選択肢が無い問題 ' + counts.noChoice + ' 件');
+  if (counts.noCorrect) detail.push('正解(○)が無い問題 ' + counts.noCorrect + ' 件');
+  if (detail.length) {
+    errors.push('CSVの内容がそろっていません。ダウンロードし直して、すべてのファイルを選び直してください（' + detail.join(' ／ ') + '）');
+  }
 
   var questionCount = qOrder.length;
   var choiceCount = 0;
   qOrder.forEach(function (id) { choiceCount += (cByQ[id] || []).length; });
 
   if (dryRun) {
-    return { ok: true, questionCount: questionCount, choiceCount: choiceCount, errors: errors, mode: mode };
+    return { ok: true, questionCount: questionCount, choiceCount: choiceCount, errors: errors, mode: mode, target_exam: targetExam };
   }
 
   var qSheet = SS.getSheetByName(SHEET_QUESTIONS);
@@ -2465,6 +2475,6 @@ function writeImport_(qMap, qOrder, cByQ, mode, dryRun, errors) {
     cSheet.getRange(cStart, 1, cOut.length, 6).setValues(cOut);
   }
 
-  var version = bumpDataVersion_(questionCount);
-  return { ok: true, questionCount: questionCount, choiceCount: cOut.length, errors: errors, mode: mode, version: version };
+  var version = bumpDataVersion_(questionCount, targetExam);
+  return { ok: true, questionCount: questionCount, choiceCount: cOut.length, errors: errors, mode: mode, version: version, target_exam: targetExam };
 }
